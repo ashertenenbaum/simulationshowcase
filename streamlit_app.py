@@ -109,12 +109,28 @@ if st.sidebar.button("Simulate & Predict", type="primary"):
     st.subheader("🔍 SHAP Feature Impact")
     import shap
     try:
-        explainer = shap.Explainer(model.predict_proba, X)
-        sv = explainer(X)
-        # sv.values shape: (n_samples, n_features, n_classes)
-        arr = np.abs(sv.values[0])           # (n_features, n_classes)
-        imp = arr.mean(axis=1)               # mean across classes → (n_features,)
-        imp_series = pd.Series(imp, index=X.columns).sort_values()
+        # Extract preprocessor and final estimator
+        from sklearn.pipeline import Pipeline
+        preprocessor = Pipeline(model.steps[:-1])
+        final_model  = model.named_steps["actual_estimator"]
+        # Preprocess to numeric array
+        X_pre = preprocessor.transform(X)
+        # Column names for numeric features
+        try:
+            feature_names = preprocessor.get_feature_names_out()
+        except:
+            feature_names = feature_cols
+        X_pre_df = pd.DataFrame(X_pre, columns=feature_names)
+        # Compute SHAP values with TreeExplainer
+        explainer = shap.TreeExplainer(final_model)
+        shap_vals = explainer.shap_values(X_pre_df)
+        # Aggregate mean absolute SHAP across samples and classes
+        if isinstance(shap_vals, list):
+            arr = np.array(shap_vals)             # shape (n_classes, n_samples, n_features)
+            imp = np.abs(arr).mean(axis=(0,1))    # (n_features,)
+        else:
+            imp = np.abs(shap_vals).mean(axis=0)  # (n_features,)
+        imp_series = pd.Series(imp, index=feature_names).sort_values()
         fig, ax = plt.subplots(figsize=(6, max(4, 0.3 * len(imp_series))))
         ax.barh(imp_series.index, imp_series.values)
         ax.set_xlabel("Mean |SHAP value|")
