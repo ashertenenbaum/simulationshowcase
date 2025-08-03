@@ -109,14 +109,23 @@ if st.sidebar.button("Simulate & Predict", type="primary"):
     st.subheader("🔍 SHAP Feature Impact")
     import shap
     try:
-        explainer = shap.Explainer(model.predict_proba, X)
-        sv = explainer(X)
-        values = sv.values
-        if values.ndim == 3:
-            imp = np.abs(values[0]).mean(axis=0)
+        final_model = model.named_steps["actual_estimator"]
+        from sklearn.pipeline import Pipeline
+        preprocessor = Pipeline(model.steps[:-1])
+        X_pre = preprocessor.transform(X)
+        try:
+            feature_names = preprocessor.get_feature_names_out()
+        except:
+            feature_names = feature_cols
+        X_pre_df = pd.DataFrame(X_pre, columns=feature_names)
+        explainer = shap.TreeExplainer(final_model)
+        shap_vals = explainer.shap_values(X_pre_df)
+        if isinstance(shap_vals, list):
+            arr = np.vstack([np.abs(sv) for sv in shap_vals])
+            imp = arr.mean(axis=0)
         else:
-            imp = np.abs(values[0])
-        imp_series = pd.Series(imp, index=X.columns).sort_values()
+            imp = np.abs(shap_vals).mean(axis=0)
+        imp_series = pd.Series(imp, index=feature_names).sort_values()
         fig, ax = plt.subplots(figsize=(6, max(4, 0.3 * len(imp_series))))
         ax.barh(imp_series.index, imp_series.values)
         ax.set_xlabel("Mean |SHAP value|")
