@@ -8,9 +8,11 @@ from PIL import Image
 from simulate_stats import simulate_match_stats
 
 def _patch():
-    import sklearn
+    import sklearn, packaging.version as _pkg
     if not hasattr(sklearn.utils, "_print_elapsed_time"):
         sklearn.utils._print_elapsed_time = lambda *a, **k: None
+    if not hasattr(sklearn.utils, "parse_version"):
+        sklearn.utils.parse_version = _pkg.parse
     try:
         m = importlib.import_module("sklearn.metrics._scorer")
         if not hasattr(m, "_Scorer"):
@@ -80,10 +82,9 @@ if st.sidebar.button("Simulate & Predict", type="primary"):
         logo = LOGO_DIR / f"{row[side]}.png"
         if logo.exists():
             img = Image.open(logo)
-            h = 120
-            w = int(img.width * (h / img.height))
-            img = img.resize((w, h))
-            col.image(img, caption=row[side])
+            h   = 120
+            w   = int(img.width * (h / img.height))
+            col.image(img.resize((w, h)), caption=row[side])
         else:
             col.markdown(f"**{row[side]}**")
 
