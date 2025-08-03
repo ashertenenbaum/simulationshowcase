@@ -11,121 +11,88 @@ def _patch_sklearn_internals():
     import sklearn, packaging.version as _pkg
     if not hasattr(sklearn.utils, "_print_elapsed_time"):
         sklearn.utils._print_elapsed_time = lambda *a, **k: None
-    if not hasattr(sklearn.utils, "_get_column_indices"):
-        def _get_column_indices(X, key):
-            if isinstance(key, slice):
-                return np.arange(X.shape[1])[key]
-            if isinstance(key, (list, tuple, np.ndarray)):
-                return np.array(key)
-            return np.array([key])
-        sklearn.utils._get_column_indices = _get_column_indices
-    if not hasattr(sklearn.utils, "parse_version"):
-        sklearn.utils.parse_version = _pkg.parse
-    try:
-        scorer_mod = importlib.import_module("sklearn.metrics._scorer")
-        if not hasattr(scorer_mod, "_Scorer"):
-            class _Scorer: ...
-            scorer_mod._Scorer = _Scorer
-    except ModuleNotFoundError:
-        pass
-    if not hasattr(sklearn.utils, "_metadata_requests"):
-        sklearn.utils._metadata_requests = None
-
 _patch_sklearn_internals()
 
-MODEL_PATH = Path("soccer_winprob_xgb.pkl")
-DATA_PATH = Path("cwc10matches.csv")
-LOGO_DIR = Path("logos")
-CLASS_MAP = {2: "Home Win", 1: "Draw", 0: "Away Win"}
+st.set_page_config("Club World Cup Predictor", page_icon="🌍", layout="wide")
+st.title("FIFA Club World Cup Predictor")
 
-st.set_page_config(page_title="Simulation Showcase", layout="centered")
-st.title("⚽ Simulation Showcase")
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Predict a Match", "How it Works"])
 
-@st.cache_resource(show_spinner=True)
-def load_model(p: Path):
-    return joblib.load(p)
+model = joblib.load("/mnt/data/xgb_model.joblib")
+data = pd.read_csv("/mnt/data/cwc10matches.csv")
 
-@st.cache_data(show_spinner=True)
-def load_matches(p: Path):
-    df = pd.read_csv(p)
-    if "MatchID" not in df.columns:
-        df.insert(0, "MatchID", range(1, len(df) + 1))
-    return df
+# Clean and prepare feature matrix for prediction
+X = data.drop(columns=["MatchID", "Home", "Away", "Result"])
 
+# Try to get feature importances
 try:
-    model = load_model(MODEL_PATH)
-    matches = load_matches(DATA_PATH)
-except Exception as e:
-    st.exception(e)
-    st.stop()
+    importances = model.feature_importances_
+    feature_names = X.columns
+    feature_importance_df = pd.DataFrame({
+        "Feature": feature_names,
+        "Importance": importances
+    })
+    feature_importance_df.sort_values("Importance", ascending=True, inplace=True)
 
-for c in matches.columns:
-    if "date" in c.lower() and not np.issubdtype(matches[c].dtype, np.datetime64):
-        matches[c] = pd.to_datetime(matches[c], errors="coerce")
-
-model_feats = getattr(model, "feature_names_in_", None) or getattr(model, "feature_names", None)
-feature_cols = [c for c in matches.columns if c in model_feats]
-
-st.sidebar.header("Choose Fixture")
-labels = [f"{r['HomeTeam_clean']} vs {r['AwayTeam_clean']}" for _, r in matches.iterrows()]
-idx = st.sidebar.selectbox("Match", range(len(labels)), format_func=lambda i: labels[i])
-
-if st.sidebar.button("Simulate & Predict", type="primary"):
-    row = matches.iloc[idx]
-    X = row[feature_cols].to_frame().T.copy()
-    with st.spinner("Running simulation… please wait"):
-        time.sleep(random.uniform(3, 5))
-        for c in X.columns:
-            if "date" in c.lower() and not np.issubdtype(X[c].dtype, np.datetime64):
-                X[c] = pd.to_datetime(X[c], errors="coerce")
-        probas = model.predict_proba(X)[0]
-    probas = np.clip(probas + np.random.normal(0, 0.01, probas.shape), 0, None)
-    probas = probas / probas.sum()
-    pred_idx = int(np.argmax(probas))
-    winner_txt = {2: row["HomeTeam_clean"], 1: "Draw", 0: row["AwayTeam_clean"]}[pred_idx]
-    st.subheader(f"🏆 Predicted Winner: **{winner_txt}**")
-    left, right = st.columns(2)
-    for side, col in zip(["HomeTeam_clean", "AwayTeam_clean"], [left, right]):
-        logo_file = LOGO_DIR / f"{row[side]}.png"
-        if logo_file.exists():
-            img = Image.open(logo_file)
-            h = 120
-            w = int(img.width * (h / img.height))
-            col.image(img.resize((w, h)), caption=row[side])
-        else:
-            col.markdown(f"**{row[side]}**")
-    fig, ax = plt.subplots(figsize=(6, 4))
-    bars = ax.barh(list(CLASS_MAP.values()), probas)
-    ax.set_xlim(0, 1)
-    for bar, p in zip(bars, probas):
-        ax.text(p + 0.02, bar.get_y() + bar.get_height() / 2, f"{p:.1%}", va="center")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.barh(feature_importance_df["Feature"], feature_importance_df["Importance"], color="skyblue")
+    ax.set_title("Feature Importance (Model-Based)")
+    ax.set_xlabel("Relative Importance")
     st.pyplot(fig)
-    st.subheader("🔍 Feature Importance (Model Coefficients)")
-    try:
-        final_model = model.named_steps["actual_estimator"]
-        feature_names = getattr(final_model, "feature_names_in_", None)
-        importances = final_model.feature_importances_
-        importance_df = pd.DataFrame({"Feature": feature_names, "Importance": importances})
-        importance_df = importance_df.sort_values("Importance", ascending=True)
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.barh(importance_df["Feature"], importance_df["Importance"], color="teal")
-        ax.set_xlabel("Feature Importance Score")
-        ax.set_title("Model Feature Importance")
-        st.pyplot(fig)
-    except Exception as e:
-        st.info(f"Feature importance not supported for this model: {e}")
-    st.subheader("🎮 Simulated Match Stats")
+except Exception as e:
+    st.warning(f"Feature importance not supported for this model: {e}")
+
+st.markdown("---")
+
+if page == "Predict a Match":
+    match = st.selectbox("Choose a match to simulate:", data[["Home", "Away"]].apply(lambda x: f"{x[0]} vs {x[1]}", axis=1))
+    match_index = data[["Home", "Away"]].apply(lambda x: f"{x[0]} vs {x[1]}", axis=1).tolist().index(match)
+    row = data.iloc[match_index]
+    X_row = X.iloc[match_index:match_index+1]
+
+    st.subheader("Predicted Outcome")
+    proba = model.predict_proba(X_row)[0]
+    outcome = model.predict(X_row)[0]
+    labels = model.classes_
+    results = dict(zip(labels, proba))
+
+    st.write(f"**Prediction:** {outcome}")
+
+    fig, ax = plt.subplots()
+    ax.bar(results.keys(), results.values(), color=["green", "gray", "red"])
+    ax.set_ylabel("Probability")
+    ax.set_title("Win/Draw/Loss Probabilities")
+    st.pyplot(fig)
+
+    st.subheader("Simulated Match Statistics")
     sim_stats = simulate_match_stats(row)
-    stats_df = pd.DataFrame([sim_stats])
-    st.dataframe(stats_df, use_container_width=True)
-    full_row = {
-        "Winner": winner_txt,
-        "HomeWinProb": probas[2],
-        "DrawProb": probas[1],
-        "AwayWinProb": probas[0],
-        **sim_stats
-    }
-    csv_bytes = pd.DataFrame([full_row]).to_csv(index=False).encode()
-    st.download_button("⬇️ Download CSV Report", csv_bytes, "prediction_report.csv", "text/csv")
-else:
-    st.info("Select a fixture and click **Simulate & Predict**.")
+    st.json(sim_stats)
+
+    if st.button("Download Match Report as CSV"):
+        out_df = pd.DataFrame([{
+            **row.to_dict(),
+            **sim_stats,
+            "Predicted Outcome": outcome,
+            **{f"P({k})": v for k, v in results.items()}
+        }])
+        out_path = "/mnt/data/match_prediction_report.csv"
+        out_df.to_csv(out_path, index=False)
+        st.success("CSV report ready for download.")
+        st.download_button("Download CSV", out_path, file_name="match_prediction_report.csv", mime="text/csv")
+
+elif page == "How it Works":
+    st.subheader("How the Prediction Works")
+    st.markdown("""
+        This app uses a machine learning model trained on Club World Cup-style fixtures with Elo ratings and team stats.
+
+        **Steps involved:**
+        - Load match data (team names, Elo ratings, past performance stats).
+        - Feed features into a trained XGBoost model.
+        - Show predicted win/draw/loss probabilities.
+        - Simulate realistic match statistics (shots, cards, etc.).
+        - Let you download the full prediction as a CSV.
+
+        **About the Feature Importance Chart**
+        The bar chart above shows which features the model found most useful when learning to predict outcomes. Longer bars mean more influence.
+    """)
