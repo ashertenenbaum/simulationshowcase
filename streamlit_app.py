@@ -100,25 +100,20 @@ if st.sidebar.button("Simulate & Predict", type="primary"):
     for bar, p in zip(bars, probas):
         ax.text(p + 0.02, bar.get_y() + bar.get_height() / 2, f"{p:.1%}", va="center")
     st.pyplot(fig)
-    st.subheader("🔍 SHAP Feature Importance")
-    import shap
+    st.subheader("🔍 Feature Importance (Model Coefficients)")
     try:
         final_model = model.named_steps["actual_estimator"]
-        preprocessor = model[:-1]
-        X_preprocessed = preprocessor.transform(X)
-        explainer = shap.TreeExplainer(final_model)
-        shap_vals = explainer.shap_values(X_preprocessed)
-        mean_abs_shap = np.abs(shap_vals).mean(axis=0)
-        feature_names = getattr(final_model, "feature_names_in_", None) or [f"Feature {i}" for i in range(len(mean_abs_shap))]
-        importance_df = pd.DataFrame({"Feature": feature_names, "Importance": mean_abs_shap})
+        feature_names = getattr(final_model, "feature_names_in_", None)
+        importances = final_model.feature_importances_
+        importance_df = pd.DataFrame({"Feature": feature_names, "Importance": importances})
         importance_df = importance_df.sort_values("Importance", ascending=True)
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.barh(importance_df["Feature"], importance_df["Importance"], color="skyblue")
-        ax.set_xlabel("Mean Absolute SHAP Value")
-        ax.set_title("Feature Importance")
+        ax.barh(importance_df["Feature"], importance_df["Importance"], color="teal")
+        ax.set_xlabel("Feature Importance Score")
+        ax.set_title("Model Feature Importance")
         st.pyplot(fig)
     except Exception as e:
-        st.info(f"SHAP not supported for this model: {e}")
+        st.info(f"Feature importance not supported for this model: {e}")
     st.subheader("🎮 Simulated Match Stats")
     sim_stats = simulate_match_stats(row)
     stats_df = pd.DataFrame([sim_stats])
