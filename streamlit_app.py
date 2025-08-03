@@ -109,19 +109,18 @@ if st.sidebar.button("Simulate & Predict", type="primary"):
     st.subheader("🔍 SHAP Feature Impact")
     import shap
     try:
-        final_model = model.named_steps["actual_estimator"]
-        preprocessor = model[:-1]
-        X_preprocessed = preprocessor.transform(X)
-        explainer = shap.TreeExplainer(final_model)
-        shap_vals = explainer.shap_values(X_preprocessed)
-
-        if isinstance(shap_vals, list):
-            shap_vals = np.abs(shap_vals).mean(axis=0)
+        explainer = shap.Explainer(model.predict_proba, X)
+        sv = explainer(X)
+        values = sv.values
+        if values.ndim == 3:
+            imp = np.abs(values[0]).mean(axis=0)
         else:
-            shap_vals = np.abs(shap_vals)
-
-        shap.summary_plot(shap_vals, features=X_preprocessed, feature_names=preprocessor.get_feature_names_out(), plot_type="bar", show=False)
-        st.pyplot(plt.gcf())
+            imp = np.abs(values[0])
+        imp_series = pd.Series(imp, index=X.columns).sort_values()
+        fig, ax = plt.subplots(figsize=(6, max(4, 0.3 * len(imp_series))))
+        ax.barh(imp_series.index, imp_series.values)
+        ax.set_xlabel("Mean |SHAP value|")
+        st.pyplot(fig)
     except Exception as e:
         st.info(f"SHAP not supported for this model: {e}")
 
