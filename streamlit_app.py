@@ -113,18 +113,15 @@ if st.sidebar.button("Simulate & Predict", type="primary"):
         from sklearn.pipeline import Pipeline
         preprocessor = Pipeline(model.steps[:-1])
         X_pre = preprocessor.transform(X)
-        try:
-            feature_names = preprocessor.get_feature_names_out()
-        except:
-            feature_names = feature_cols
-        X_pre_df = pd.DataFrame(X_pre, columns=feature_names)
         explainer = shap.TreeExplainer(final_model)
-        shap_vals = explainer.shap_values(X_pre_df)
+        shap_vals = explainer.shap_values(X_pre)
         if isinstance(shap_vals, list):
-            arr = np.vstack([np.abs(sv) for sv in shap_vals])
-            imp = arr.mean(axis=0)
+            imp = np.vstack([np.abs(s) for s in shap_vals]).mean(axis=0)
         else:
             imp = np.abs(shap_vals).mean(axis=0)
+        feature_names = getattr(final_model, "feature_names_", None) or [
+            f"f{i}" for i in range(len(imp))
+        ]
         imp_series = pd.Series(imp, index=feature_names).sort_values()
         fig, ax = plt.subplots(figsize=(6, max(4, 0.3 * len(imp_series))))
         ax.barh(imp_series.index, imp_series.values)
