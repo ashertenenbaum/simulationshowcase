@@ -114,7 +114,13 @@ if st.sidebar.button("Simulate & Predict", type="primary"):
         X_preprocessed = preprocessor.transform(X)
         explainer = shap.TreeExplainer(final_model)
         shap_vals = explainer.shap_values(X_preprocessed)
-        shap.summary_plot(shap_vals, X_preprocessed, show=False)
+
+        if isinstance(shap_vals, list):
+            shap_vals = np.abs(shap_vals).mean(axis=0)
+        else:
+            shap_vals = np.abs(shap_vals)
+
+        shap.summary_plot(shap_vals, features=X_preprocessed, feature_names=preprocessor.get_feature_names_out(), plot_type="bar", show=False)
         st.pyplot(plt.gcf())
     except Exception as e:
         st.info(f"SHAP not supported for this model: {e}")
